@@ -28,6 +28,18 @@ source .envrc
 ./scripts/start_ml_backend.sh
 ```
 
+## Start Label Studio with warmup (recommended)
+
+This starts (or reuses) the ML backend, runs a warmup predict call on a local frame,
+and then starts Label Studio:
+
+```bash
+source .envrc
+./scripts/start_label_studio.sh
+```
+
+The warmup removes the first-request model load delay in Label Studio.
+
 ## RTX 4080 Laptop (local GPU) setup
 
 Install CUDA-enabled PyTorch wheels in `.venv`:
