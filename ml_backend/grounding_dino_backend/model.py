@@ -60,11 +60,11 @@ class GroundingDinoArtifactModel(LabelStudioMLBase):
 
         self._processor = None
         self._model = None
-        self._backend_mode = "opencv-fallback"
-        self._init_grounding_dino_if_available()
+        self._backend_mode = "lazy-not-initialized"
+        self._runtime_initialized = False
 
         LOGGER.info(
-            "Initialized model mode=%s model_id=%s labels=%s",
+            "Initialized model (lazy) mode=%s model_id=%s labels=%s",
             self._backend_mode,
             self.model_id,
             self.allowed_labels,
@@ -89,6 +89,7 @@ class GroundingDinoArtifactModel(LabelStudioMLBase):
             from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor  # type: ignore
         except Exception as exc:  # pragma: no cover - env dependent
             LOGGER.warning("Grounding DINO deps unavailable, using OpenCV fallback: %s", exc)
+            self._backend_mode = "opencv-fallback"
             return
 
         try:
@@ -104,7 +105,14 @@ class GroundingDinoArtifactModel(LabelStudioMLBase):
             self._model = None
             self._backend_mode = "opencv-fallback"
 
+    def _ensure_runtime_initialized(self) -> None:
+        if self._runtime_initialized:
+            return
+        self._init_grounding_dino_if_available()
+        self._runtime_initialized = True
+
     def predict(self, tasks: list[dict[str, Any]], **kwargs: Any) -> list[dict[str, Any]]:
+        self._ensure_runtime_initialized()
         predictions: list[dict[str, Any]] = []
         for task in tasks:
             image_path = self._resolve_image_path(task)
@@ -178,13 +186,24 @@ class GroundingDinoArtifactModel(LabelStudioMLBase):
         with torch.no_grad():
             outputs = self._model(**inputs)
 
-        processed = self._processor.post_process_grounded_object_detection(
-            outputs,
-            inputs["input_ids"],
-            box_threshold=self.box_threshold,
-            text_threshold=self.text_threshold,
-            target_sizes=[(height, width)],
-        )[0]
+        try:
+            # transformers<=4.x
+            processed = self._processor.post_process_grounded_object_detection(
+                outputs,
+                inputs["input_ids"],
+                box_threshold=self.box_threshold,
+                text_threshold=self.text_threshold,
+                target_sizes=[(height, width)],
+            )[0]
+        except TypeError:
+            # transformers>=5.x renamed box_threshold -> threshold
+            processed = self._processor.post_process_grounded_object_detection(
+                outputs,
+                inputs["input_ids"],
+                threshold=self.box_threshold,
+                text_threshold=self.text_threshold,
+                target_sizes=[(height, width)],
+            )[0]
 
         boxes = processed["boxes"].cpu().numpy()
         scores = processed["scores"].cpu().numpy()

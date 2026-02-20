@@ -28,6 +28,24 @@ source .envrc
 ./scripts/start_ml_backend.sh
 ```
 
+## RTX 4080 Laptop (local GPU) setup
+
+Install CUDA-enabled PyTorch wheels in `.venv`:
+
+```bash
+.venv/bin/python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch torchvision
+.venv/bin/python -m pip install transformers accelerate
+```
+
+Then run backend with:
+
+```bash
+source .envrc
+./scripts/start_ml_backend.sh
+```
+
+`start_ml_backend.sh` sets `GROUNDING_DINO_DEVICE=cuda` by default and includes the NVIDIA driver path (`/run/opengl-driver/lib`) in `LD_LIBRARY_PATH`.
+
 Health check:
 
 ```bash
