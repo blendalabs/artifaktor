@@ -70,7 +70,7 @@ source .envrc
 Environment variables:
 
 - `GROUNDING_DINO_MODEL_ID` (default: `IDEA-Research/grounding-dino-tiny`)
-- `GROUNDING_DINO_DEVICE` (default: `cpu`, set `cuda` on GPU)
+- `GROUNDING_DINO_DEVICE` (default in model: `cpu`; `scripts/start_ml_backend.sh` sets `cuda` if unset)
 - `GROUNDING_DINO_BOX_THRESHOLD` (default: `0.22`)
 - `GROUNDING_DINO_TEXT_THRESHOLD` (default: `0.20`)
 - `GROUNDING_DINO_MAX_DETECTIONS` (default: `20`)
