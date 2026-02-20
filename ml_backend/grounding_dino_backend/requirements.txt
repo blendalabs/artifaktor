@@ -1,0 +1,9 @@
+# Install these in the ML backend environment (GPU preferred)
+label-studio-ml>=1.0.9
+opencv-python-headless>=4.8
+Pillow>=10.0
+
+# Grounding DINO via transformers
+transformers>=4.41
+torch>=2.2
+torchvision>=0.17
