@@ -1,13 +1,12 @@
 # Grounding DINO Label Studio ML backend
 
-This backend provides automatic preannotations (bounding boxes) for the artifact labels:
+This backend provides automatic preannotations for:
 
-- `flicker`
-- `morph`
-- `hand_distortion`
-- `face_distortion`
-- `temporal_blur`
-- `edge_artifact`
+- Rectangle label: `body_distortion`
+- Per-region attribute (auto-filled when possible): `body_part`
+  - `face`, `hair`, `hand`, `arm`, `leg`, `torso`, `full_body`, `other`
+- Optional per-region attribute (manual): `severity`
+  - `mild`, `medium`, `severe`
 
 ## Runtime modes
 
@@ -17,7 +16,7 @@ This backend provides automatic preannotations (bounding boxes) for the artifact
 
 2. **OpenCV fallback mode**
    - Used automatically if Grounding DINO deps are unavailable
-   - Returns conservative `edge_artifact` boxes only
+   - Returns conservative generic `body_distortion` boxes
 
 ## Start locally
 
