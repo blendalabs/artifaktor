@@ -1,7 +1,15 @@
 [project]
 name = "artifaktor"
 version = "0.1.0"
-description = "Add your description here"
+description = "Visual artifact detector for AI-generated animation frames"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "PySide6>=6.6",
+    "opencv-python-headless>=4.8",
+    "numpy>=1.24",
+    "scikit-image>=0.21",
+]
+
+[project.scripts]
+artifaktor = "artifact_detector.main:main"

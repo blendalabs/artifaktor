@@ -1,0 +1,4 @@
+PySide6>=6.6
+opencv-python-headless>=4.8
+numpy>=1.24
+scikit-image>=0.21
