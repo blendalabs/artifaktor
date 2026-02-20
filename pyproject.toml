@@ -9,6 +9,9 @@ dependencies = [
     "opencv-python-headless>=4.8",
     "numpy>=1.24",
     "scikit-image>=0.21",
+    "label-studio",
+    "label-studio-sdk",
+    "label-studio-ml",
 ]
 
 [project.scripts]

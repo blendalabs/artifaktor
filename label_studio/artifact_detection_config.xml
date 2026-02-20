@@ -1,0 +1,15 @@
+<View>
+  <Header value="AI Video Artifact Detection" />
+  <Text name="meta" value="Use bounding boxes to annotate visual artifacts." />
+
+  <Image name="image" value="$image" zoom="true" rotateControl="true" />
+
+  <RectangleLabels name="label" toName="image" showInline="true">
+    <Label value="flicker" hotkey="1" background="#E53935" />
+    <Label value="morph" hotkey="2" background="#8E24AA" />
+    <Label value="hand_distortion" hotkey="3" background="#3949AB" />
+    <Label value="face_distortion" hotkey="4" background="#1E88E5" />
+    <Label value="temporal_blur" hotkey="5" background="#00897B" />
+    <Label value="edge_artifact" hotkey="6" background="#F4511E" />
+  </RectangleLabels>
+</View>
