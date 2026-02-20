@@ -31,10 +31,19 @@ source .envrc
 ## Start Label Studio with warmup (recommended)
 
 This starts (or reuses) the ML backend, runs a warmup predict call on a local frame,
-and then starts Label Studio:
+and then starts Label Studio.
+
+After `source .envrc`, use Label Studio normally:
 
 ```bash
-source .envrc
+label-studio start
+```
+
+(`.envrc` wraps `label-studio start` to call `scripts/start_label_studio.sh`.)
+
+You can still call the launcher directly:
+
+```bash
 ./scripts/start_label_studio.sh
 ```
 
