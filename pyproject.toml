@@ -1,13 +1,19 @@
 [project]
 name = "artifaktor"
-version = "0.1.0"
-description = "Visual artifact detector for AI-generated animation frames"
+version = "0.2.0"
+description = "Lightweight frame annotation desktop app with ML backend integration"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "PySide6>=6.6",
     "opencv-python-headless>=4.8",
     "numpy>=1.24",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+# ML backend server (Label Studio–based, run separately)
+ml-backend = [
     "scikit-image>=0.21",
     "label-studio",
     "label-studio-sdk",

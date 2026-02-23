@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 from collections import OrderedDict
 
 import cv2
@@ -42,15 +43,15 @@ class FrameLoader:
         self._cache.clear()
 
     def load_folder(self, path: str) -> None:
-        """Load an image sequence from a folder of PNGs/JPGs."""
-        exts = ("*.png", "*.jpg", "*.jpeg", "*.PNG", "*.JPG", "*.JPEG")
+        """Load an image sequence from a folder of PNGs/JPGs/WebPs."""
+        exts = ("*.png", "*.jpg", "*.jpeg", "*.webp", "*.PNG", "*.JPG", "*.JPEG", "*.WEBP")
         files: list[str] = []
         for ext in exts:
             files.extend(glob.glob(os.path.join(path, ext)))
-        files.sort()
+        files.sort(key=self._natural_sort_key)
 
         if not files:
-            raise ValueError(f"No PNG/JPG images found in: {path}")
+            raise ValueError(f"No PNG/JPG/WebP images found in: {path}")
 
         self._source_type = "folder"
         self._image_paths = files
@@ -101,6 +102,12 @@ class FrameLoader:
                 return cv2.imread(self._image_paths[idx])
         return None
 
+    @staticmethod
+    def _natural_sort_key(path: str) -> list[int | str]:
+        """Natural sort key so frame_2 comes before frame_10."""
+        name = os.path.basename(path)
+        return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", name)]
+
     @property
     def frame_count(self) -> int:
         return self._frame_count
@@ -125,3 +132,22 @@ class FrameLoader:
             if self._image_paths:
                 return os.path.basename(os.path.dirname(self._image_paths[0]))
         return ""
+
+    @property
+    def source_dir(self) -> str | None:
+        """Return the folder path for image-sequence sources, else None."""
+        if self._source_type == "folder" and self._image_paths:
+            return os.path.dirname(self._image_paths[0])
+        return None
+
+    def filename_at(self, idx: int) -> str | None:
+        """Return the basename of the image at *idx* (e.g. 'frame_000001.jpg')."""
+        if self._source_type == "folder" and 0 <= idx < len(self._image_paths):
+            return os.path.basename(self._image_paths[idx])
+        return None
+
+    def image_path_at(self, idx: int) -> str | None:
+        """Return the full path of the image at *idx*."""
+        if self._source_type == "folder" and 0 <= idx < len(self._image_paths):
+            return self._image_paths[idx]
+        return None

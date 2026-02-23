@@ -1,68 +1,76 @@
+"""Main annotation window.
+
+Layout:
+
+    ┌──────────────────────────────────────────────────────────────┐
+    │ [Load Folder]  [Train]  [Predict]        backend status…     │ ← toolbar
+    ├──────────────────────────────────────────────────────────────┤
+    │                                                              │
+    │                  FrameViewer (canvas)                        │ ← main
+    │                                                              │
+    ├──────────────────────────────────────────────────────────────┤
+    │  |< < Play > >|  F: 1/500  ══════════════ slider ══════════ │ ← transport
+    ├──────────────────────────────────────────────────────────────┤
+    │  ←/→ navigate  |  Drag: add box  |  Click box: delete  |... │ ← hints
+    └──────────────────────────────────────────────────────────────┘
+
+Keyboard shortcuts
+------------------
+* ``Left`` / ``Right``     — previous / next frame
+* ``Space``                — play / pause
+* ``Ctrl+Backspace``       — clear all boxes on current frame
+"""
 from __future__ import annotations
 
-from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+import os
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QStatusBar,
     QVBoxLayout,
     QWidget,
 )
 
-from ..core.detector import DetectionParams, Detector
+from ..core.annotations import AnnotationStore
+from ..core.backend import BackendClient, PredictWorker, TrainWorker
 from ..core.loader import FrameLoader
 from .frame_viewer import FrameViewer
-from .param_panel import ParamPanel
 from .transport import TransportControls
 
 
-class ProcessingWorker(QThread):
-    """Runs detection on all frames in a background thread."""
-
-    progress = Signal(int, int)  # current, total
-    finished_ok = Signal()
-    error = Signal(str)
-
-    def __init__(self, detector: Detector, params: DetectionParams):
-        super().__init__()
-        self._detector = detector
-        self._params = params
-        self._cancelled = False
-
-    def run(self) -> None:
-        try:
-            self._detector.process_all(
-                self._params,
-                progress_callback=lambda cur, total: self.progress.emit(cur, total),
-                cancel_check=lambda: self._cancelled,
-            )
-            if not self._cancelled:
-                self.finished_ok.emit()
-        except Exception as e:
-            self.error.emit(str(e))
-
-    def cancel(self) -> None:
-        self._cancelled = True
-
-
 class MainWindow(QMainWindow):
-    def __init__(self):
+    """Lightweight frame annotation window."""
+
+    backend_status_changed = Signal(str)
+
+    def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Artifaktor — Artifact Detector")
+        self.setWindowTitle("Artifaktor — Frame Annotator")
         self.setMinimumSize(900, 600)
-        self.resize(1200, 750)
+        self.resize(1280, 780)
 
         self._loader = FrameLoader()
-        self._detector: Detector | None = None
-        self._worker: ProcessingWorker | None = None
+        self._annotations = AnnotationStore()
+        self._backend = BackendClient(
+            os.environ.get("ML_BACKEND_URL", "http://localhost:9090")
+        )
+        self._predict_worker: PredictWorker | None = None
+        self._train_worker: TrainWorker | None = None
 
         self._setup_ui()
+        self.backend_status_changed.connect(self._backend_label.setText)
         self._setup_shortcuts()
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
 
     def _setup_ui(self) -> None:
         central = QWidget()
@@ -71,86 +79,81 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(4)
 
-        # --- Top toolbar ---
+        # ── Top toolbar ────────────────────────────────────────────
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(6)
+        toolbar.setSpacing(8)
 
-        self._btn_load_video = QPushButton("Load Video")
-        self._btn_load_video.clicked.connect(self._load_video)
-        toolbar.addWidget(self._btn_load_video)
+        self._btn_load = QPushButton("📂  Load Folder")
+        self._btn_load.clicked.connect(self._load_folder)
+        toolbar.addWidget(self._btn_load)
 
-        self._btn_load_folder = QPushButton("Load Folder")
-        self._btn_load_folder.clicked.connect(self._load_folder)
-        toolbar.addWidget(self._btn_load_folder)
+        toolbar.addSpacing(12)
 
-        self._btn_process = QPushButton("Process All")
-        self._btn_process.setEnabled(False)
-        self._btn_process.clicked.connect(self._start_processing)
-        self._btn_process.setStyleSheet("font-weight: bold;")
-        toolbar.addWidget(self._btn_process)
+        self._btn_train = QPushButton("🧠  Train")
+        self._btn_train.setEnabled(False)
+        self._btn_train.setToolTip("Send current annotations to the ML backend for training")
+        self._btn_train.clicked.connect(self._start_training)
+        toolbar.addWidget(self._btn_train)
 
-        self._btn_process_frame = QPushButton("Process Frame")
-        self._btn_process_frame.setEnabled(False)
-        self._btn_process_frame.clicked.connect(self._process_current_frame)
-        toolbar.addWidget(self._btn_process_frame)
-
-        self._progress = QProgressBar()
-        self._progress.setVisible(False)
-        self._progress.setTextVisible(True)
-        self._progress.setFixedHeight(22)
-        toolbar.addWidget(self._progress, 1)
+        self._btn_predict = QPushButton("🔮  Predict")
+        self._btn_predict.setEnabled(False)
+        self._btn_predict.setToolTip("Ask the ML backend to predict boxes on the current frame")
+        self._btn_predict.clicked.connect(self._start_predict)
+        toolbar.addWidget(self._btn_predict)
 
         toolbar.addStretch()
+
+        self._backend_label = QLabel("Backend: —")
+        self._backend_label.setStyleSheet("color: #888; font-size: 11px;")
+        toolbar.addWidget(self._backend_label)
+
         root.addLayout(toolbar)
 
-        # --- Main content: viewer + param panel ---
-        content = QHBoxLayout()
-        content.setSpacing(6)
-
-        # Left: viewer + transport
-        left = QVBoxLayout()
-        left.setSpacing(4)
-
+        # ── FrameViewer ────────────────────────────────────────────
         self._viewer = FrameViewer()
-        left.addWidget(self._viewer, 1)
+        self._viewer.rectangle_created.connect(self._on_rect_created)
+        self._viewer.rectangle_deleted.connect(self._on_rect_deleted)
+        root.addWidget(self._viewer, 1)
 
+        # ── Transport ──────────────────────────────────────────────
         self._transport = TransportControls()
         self._transport.frame_changed.connect(self._on_frame_changed)
-        left.addWidget(self._transport)
+        root.addWidget(self._transport)
 
-        content.addLayout(left, 1)
+        # ── Shortcut hints ─────────────────────────────────────────
+        hints = QLabel(
+            "←/→ or Q/W  navigate  │  Drag: add box  │  Click box: delete  │"
+            "  Ctrl+Backspace: clear frame"
+        )
+        hints.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hints.setStyleSheet("color: #666; font-size: 11px; padding: 2px 0;")
+        root.addWidget(hints)
 
-        # Right: param panel
-        self._param_panel = ParamPanel()
-        self._param_panel.params_changed.connect(self._on_display_changed)
-        content.addWidget(self._param_panel)
-
-        root.addLayout(content, 1)
-
-        # Status bar
+        # ── Status bar ─────────────────────────────────────────────
         self._status = QStatusBar()
         self.setStatusBar(self._status)
-        self._status.showMessage("Ready — load a video or image folder")
+        self._status.showMessage("Ready — load an image folder to begin")
 
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence(Qt.Key.Key_Left), self, self._transport.step_prev)
         QShortcut(QKeySequence(Qt.Key.Key_Right), self, self._transport.step_next)
+        QShortcut(QKeySequence(Qt.Key.Key_Q), self, self._transport.step_prev)
+        QShortcut(QKeySequence(Qt.Key.Key_W), self, self._transport.step_next)
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, self._transport.toggle_play)
-        QShortcut(QKeySequence(Qt.Key.Key_Home), self, lambda: self._transport.set_current_frame(0))
-
-    # --- Loading ---
-
-    def _load_video(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Open Video", "", "Video Files (*.mp4 *.avi *.mov *.mkv);;All Files (*)"
+        QShortcut(
+            QKeySequence(Qt.Key.Key_Home),
+            self,
+            lambda: self._transport.set_current_frame(0),
         )
-        if not path:
-            return
-        try:
-            self._loader.load_video(path)
-            self._on_loaded()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load video:\n{e}")
+        QShortcut(
+            QKeySequence("Ctrl+Backspace"),
+            self,
+            self._on_clear_frame,
+        )
+
+    # ------------------------------------------------------------------
+    # Folder loading
+    # ------------------------------------------------------------------
 
     def _load_folder(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Open Image Folder")
@@ -159,113 +162,199 @@ class MainWindow(QMainWindow):
         try:
             self._loader.load_folder(path)
             self._on_loaded()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load folder:\n{e}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to load folder:\n{exc}")
 
     def _on_loaded(self) -> None:
-        self._detector = Detector(self._loader)
+        # Load (or start fresh) annotation store
+        src = self._loader.source_dir
+        if src:
+            self._annotations.load(src)
+
         self._transport.set_frame_count(self._loader.frame_count, self._loader.fps)
-        self._btn_process.setEnabled(True)
-        self._btn_process_frame.setEnabled(True)
+        self._btn_train.setEnabled(True)
+        self._btn_predict.setEnabled(True)
+
         self._status.showMessage(
-            f"Loaded: {self._loader.source_name} — "
-            f"{self._loader.frame_count} frames, "
-            f"{self._loader.frame_size[0]}x{self._loader.frame_size[1]}"
+            f"Loaded: {self._loader.source_name}  —  "
+            f"{self._loader.frame_count} frames  "
+            f"{self._loader.frame_size[0]}×{self._loader.frame_size[1]}"
         )
-        self._param_panel.set_region_count(0)
+
         # Show first frame
         self._show_frame(0)
 
-    # --- Processing ---
+        # Async backend health check
+        self._check_backend_async()
 
-    def _start_processing(self) -> None:
-        if self._worker and self._worker.isRunning():
-            self._worker.cancel()
-            self._worker.wait()
+    def _check_backend_async(self) -> None:
+        """Update backend status without blocking the UI thread."""
+        import threading
 
-        if not self._detector:
-            return
+        def _ping() -> None:
+            ok = self._backend.health_check()
+            self.backend_status_changed.emit(
+                "Backend: ✅ online" if ok else "Backend: ⚠️ offline"
+            )
 
-        params = self._param_panel.get_params()
-        self._worker = ProcessingWorker(self._detector, params)
-        self._worker.progress.connect(self._on_progress)
-        self._worker.finished_ok.connect(self._on_processing_done)
-        self._worker.error.connect(self._on_processing_error)
+        threading.Thread(target=_ping, daemon=True).start()
 
-        self._progress.setVisible(True)
-        self._progress.setValue(0)
-        self._btn_process.setEnabled(False)
-        self._btn_process_frame.setEnabled(False)
-        self._btn_load_video.setEnabled(False)
-        self._btn_load_folder.setEnabled(False)
-        self._status.showMessage("Processing...")
-
-        self._worker.start()
-
-    def _on_progress(self, current: int, total: int) -> None:
-        self._progress.setMaximum(total)
-        self._progress.setValue(current)
-        self._progress.setFormat(f"Processing frame {current}/{total}")
-
-    def _on_processing_done(self) -> None:
-        self._progress.setVisible(False)
-        self._btn_process.setEnabled(True)
-        self._btn_process_frame.setEnabled(True)
-        self._btn_load_video.setEnabled(True)
-        self._btn_load_folder.setEnabled(True)
-        self._status.showMessage("Processing complete")
-        # Refresh current frame with results
-        self._show_frame(self._transport.current_frame())
-
-    def _process_current_frame(self) -> None:
-        if not self._detector:
-            return
-        idx = self._transport.current_frame()
-        params = self._param_panel.get_params()
-        self._status.showMessage(f"Processing frame {idx + 1}...")
-        self._btn_process_frame.setEnabled(False)
-        try:
-            self._detector.process_frame(idx, params)
-        except Exception as e:
-            QMessageBox.critical(self, "Processing Error", str(e))
-        self._btn_process_frame.setEnabled(True)
-        self._show_frame(idx)
-        self._status.showMessage(f"Frame {idx + 1} processed")
-
-    def _on_processing_error(self, msg: str) -> None:
-        self._progress.setVisible(False)
-        self._btn_process.setEnabled(True)
-        self._btn_process_frame.setEnabled(True)
-        self._btn_load_video.setEnabled(True)
-        self._btn_load_folder.setEnabled(True)
-        QMessageBox.critical(self, "Processing Error", msg)
-        self._status.showMessage("Processing failed")
-
-    # --- Frame display ---
+    # ------------------------------------------------------------------
+    # Frame display
+    # ------------------------------------------------------------------
 
     def _on_frame_changed(self, idx: int) -> None:
         self._show_frame(idx)
-
-    def _on_display_changed(self) -> None:
-        self._show_frame(self._transport.current_frame())
 
     def _show_frame(self, idx: int) -> None:
         frame = self._loader.get_frame(idx)
         if frame is None:
             return
 
-        heatmap = None
-        boxes = []
+        frame_id = self._loader.filename_at(idx) or ""
+        boxes = self._annotations.get_boxes_as_tuples(frame_id)
+        self._viewer.set_frame(frame, boxes=boxes)
+        self._update_status(idx, frame_id)
 
-        if self._detector:
-            result = self._detector.get_result(idx)
-            if result:
-                heatmap = result.heatmap
-                boxes = result.boxes
-
-        self._viewer.set_frame(frame, heatmap=heatmap, boxes=boxes)
-        self._viewer.set_display_options(
-            show_heatmap=self._param_panel.show_heatmap.isChecked(),
-            show_boxes=self._param_panel.show_boxes.isChecked(),
+    def _update_status(self, idx: int, frame_id: str) -> None:
+        total = self._loader.frame_count
+        box_count = len(self._annotations.get_boxes(frame_id))
+        self._status.showMessage(
+            f"Frame {idx + 1}/{total}  │  {frame_id}  │  {box_count} box{'es' if box_count != 1 else ''}"
         )
-        self._param_panel.set_region_count(len(boxes))
+
+    # ------------------------------------------------------------------
+    # Rectangle interactions
+    # ------------------------------------------------------------------
+
+    def _current_frame_id(self) -> str:
+        idx = self._transport.current_frame()
+        return self._loader.filename_at(idx) or ""
+
+    def _on_rect_created(self, x: int, y: int, w: int, h: int) -> None:
+        frame_id = self._current_frame_id()
+        if not frame_id:
+            return
+        self._annotations.add_box(frame_id, x, y, w, h)
+        self._refresh_boxes()
+
+    def _on_rect_deleted(self, idx: int) -> None:
+        frame_id = self._current_frame_id()
+        if not frame_id:
+            return
+        self._annotations.delete_box(frame_id, idx)
+        self._refresh_boxes()
+
+    def _on_clear_frame(self) -> None:
+        frame_id = self._current_frame_id()
+        if not frame_id:
+            return
+        self._annotations.clear_frame(frame_id)
+        self._refresh_boxes()
+
+    def _refresh_boxes(self) -> None:
+        """Redraw boxes and update status without reloading the frame."""
+        frame_id = self._current_frame_id()
+        idx = self._transport.current_frame()
+        boxes = self._annotations.get_boxes_as_tuples(frame_id)
+        self._viewer.set_boxes(boxes)
+        self._update_status(idx, frame_id)
+
+    # ------------------------------------------------------------------
+    # Train
+    # ------------------------------------------------------------------
+
+    def _start_training(self) -> None:
+        if TrainWorker is None:
+            self._status.showMessage("Training unavailable: Qt worker support not loaded")
+            return
+
+        if self._train_worker and self._train_worker.isRunning():
+            return
+
+        src = self._loader.source_dir
+        if not src:
+            return
+
+        self._btn_train.setEnabled(False)
+        self._backend_label.setText("Backend: 🔄 training…")
+        self._status.showMessage("Sending training request to backend…")
+
+        self._train_worker = TrainWorker(
+            self._backend,
+            dict(self._annotations.all_data),
+            src,
+        )
+        self._train_worker.finished.connect(self._on_train_done)
+        self._train_worker.error.connect(self._on_train_error)
+        self._train_worker.start()
+
+    def _on_train_done(self, result: dict) -> None:
+        self._btn_train.setEnabled(True)
+        self._backend_label.setText("Backend: ✅ online")
+        msg = result.get("message", "Training complete")
+        self._status.showMessage(f"Training done: {msg}")
+
+    def _on_train_error(self, msg: str) -> None:
+        self._btn_train.setEnabled(True)
+        self._backend_label.setText("Backend: ⚠️ offline")
+        self._status.showMessage(f"Training failed: {msg}")
+
+    # ------------------------------------------------------------------
+    # Predict
+    # ------------------------------------------------------------------
+
+    def _start_predict(self) -> None:
+        if PredictWorker is None:
+            self._status.showMessage("Prediction unavailable: Qt worker support not loaded")
+            return
+
+        if self._predict_worker and self._predict_worker.isRunning():
+            return
+
+        idx = self._transport.current_frame()
+        image_path = self._loader.image_path_at(idx)
+        frame_id = self._loader.filename_at(idx)
+        if not image_path or not frame_id:
+            return
+
+        self._btn_predict.setEnabled(False)
+        self._backend_label.setText("Backend: 🔄 predicting…")
+        self._status.showMessage("Requesting predictions from backend…")
+
+        self._predict_worker = PredictWorker(self._backend, image_path, frame_id)
+        self._predict_worker.finished.connect(lambda boxes: self._on_predict_done(boxes, frame_id))
+        self._predict_worker.error.connect(self._on_predict_error)
+        self._predict_worker.start()
+
+    def _on_predict_done(self, boxes: list[dict], frame_id: str) -> None:
+        self._btn_predict.setEnabled(True)
+        self._backend_label.setText("Backend: ✅ online")
+
+        # Replace current frame's boxes with predictions
+        self._annotations.set_boxes(frame_id, boxes)
+        self._refresh_boxes()
+        self._status.showMessage(
+            f"Predicted {len(boxes)} box{'es' if len(boxes) != 1 else ''} on {frame_id}"
+        )
+
+    def _on_predict_error(self, msg: str) -> None:
+        self._btn_predict.setEnabled(True)
+        self._backend_label.setText("Backend: ⚠️ offline")
+        self._status.showMessage(f"Prediction failed: {msg}")
+
+    # ------------------------------------------------------------------
+    # Window lifecycle
+    # ------------------------------------------------------------------
+
+    def closeEvent(self, event) -> None:
+        # Final safety save
+        if self._annotations.is_loaded:
+            self._annotations.save()
+
+        # Stop any running workers cleanly
+        for worker in (self._train_worker, self._predict_worker):
+            if worker and worker.isRunning():
+                worker.wait(2000)
+
+        super().closeEvent(event)

@@ -85,6 +85,18 @@ source .envrc
   --test-predict
 ```
 
+## Retrain loop in Label Studio (15-min cycle)
+
+This backend now supports manual retraining from Label Studio's **Train** button:
+
+1. Label for ~15 minutes
+2. Click **Train** on the connected ML backend
+3. In Data Manager, run **Retrieve Predictions**
+4. Review/edit and continue
+
+Training uses a lightweight frame-sequence KNN learner over accepted annotations
+(frame index → center/size). This gives immediate iterative improvement for sequential frames.
+
 ## Tuning
 
 Environment variables:
@@ -94,6 +106,16 @@ Environment variables:
 - `GROUNDING_DINO_BOX_THRESHOLD` (default: `0.22`)
 - `GROUNDING_DINO_TEXT_THRESHOLD` (default: `0.20`)
 - `GROUNDING_DINO_MAX_DETECTIONS` (default: `20`)
+
+Sequence-learning settings:
+
+- `SEQUENCE_LEARNING_ENABLED` (default: `true`)
+- `SEQUENCE_PREFER_TRAINED` (default: `true`)
+- `SEQUENCE_MIN_TRAIN_SAMPLES` (default: `8`)
+- `SEQUENCE_K_NEIGHBORS` (default: `4`)
+- `SEQUENCE_DEFAULT_BOX_WIDTH_PCT` (default: `6.0`)
+- `SEQUENCE_DEFAULT_BOX_HEIGHT_PCT` (default: `10.0`)
+- `SEQUENCE_TRAIN_ON_ANNOTATION_EVENTS` (default: `false`)
 
 ## Modal / cloud GPU note
 

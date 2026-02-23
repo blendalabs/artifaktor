@@ -1,41 +1,37 @@
 <View>
   <Header value="AI Video Artifact Detection" />
-  <Text name="meta" value="Draw a box around each distortion, then set body part (and optional severity)." />
+  <Text name="meta" value="Fast mode: only draw artifact boxes. Ignore body_part/severity unless you really need them." />
 
-  <Image name="image" value="$image" zoom="true" rotateControl="true" />
+  <View style="display:flex; gap:16px; align-items:flex-start;">
+    <View style="flex:3; min-width: 70%;">
+      <Image name="image" value="$image" zoom="true" rotateControl="true" />
+    </View>
+    <View style="flex:1; min-width:260px; border:1px solid #ddd; padding:12px; border-radius:8px;">
+      <Header value="Hotkeys" />
+      <Text name="hotkeys_legend" value="Ctrl+1 = artifact box&#10;No artifact = submit empty&#10;Submit = next frame" />
+    </View>
+  </View>
 
   <RectangleLabels name="label" toName="image" showInline="true">
-    <Label value="body_distortion" hotkey="1" background="#E53935" />
+    <Label value="body_distortion" hotkey="ctrl+1" background="#E53935" />
   </RectangleLabels>
 
-  <Choices
-    name="body_part"
-    toName="image"
-    perRegion="true"
-    whenTagName="label"
-    selection="single"
-    showInline="true"
-  >
-    <Choice value="face" hotkey="f" />
-    <Choice value="hair" hotkey="h" />
-    <Choice value="hand" hotkey="n" />
-    <Choice value="arm" hotkey="a" />
-    <Choice value="leg" hotkey="l" />
-    <Choice value="torso" hotkey="t" />
-    <Choice value="full_body" hotkey="b" />
-    <Choice value="other" hotkey="o" />
+  <!-- Kept only for backward compatibility with existing annotations -->
+  <Choices name="body_part" toName="image" perRegion="true" whenTagName="label" selection="single" showInline="false">
+    <Choice value="face" />
+    <Choice value="hair" />
+    <Choice value="hand" />
+    <Choice value="arm" />
+    <Choice value="leg" />
+    <Choice value="torso" />
+    <Choice value="full_body" />
+    <Choice value="other" />
   </Choices>
 
-  <Choices
-    name="severity"
-    toName="image"
-    perRegion="true"
-    whenTagName="label"
-    selection="single"
-    showInline="true"
-  >
-    <Choice value="mild" hotkey="q" />
-    <Choice value="medium" hotkey="w" />
-    <Choice value="severe" hotkey="e" />
+  <!-- Kept only for backward compatibility with existing annotations -->
+  <Choices name="severity" toName="image" perRegion="true" whenTagName="label" selection="single" showInline="false">
+    <Choice value="mild" />
+    <Choice value="medium" />
+    <Choice value="severe" />
   </Choices>
 </View>
