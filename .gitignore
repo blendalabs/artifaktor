@@ -7,3 +7,6 @@ build/
 *.png
 sequences/
 ml_backend/grounding_dino_backend/[0-9]*/
+models/
+*.pt
+=*

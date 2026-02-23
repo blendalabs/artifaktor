@@ -312,6 +312,12 @@ class GroundingDinoArtifactModel(LabelStudioMLBase):
 
         # Explicit manual retrain from LS button (modern flow)
         if event == "START_TRAINING":
+            # Allow direct task payload for non-Label-Studio callers (custom local app).
+            direct_tasks = data.get("tasks") if isinstance(data, dict) else None
+            if isinstance(direct_tasks, list) and direct_tasks:
+                LOGGER.info("START_TRAINING received with direct task payload: tasks=%s", len(direct_tasks))
+                return self.fit(direct_tasks, event=event, data=data, job_id=job_id, **additional_params)
+
             project_id = self._extract_project_id_from_event(data)
             tasks = self._fetch_annotated_tasks_from_ls(project_id)
             LOGGER.info("START_TRAINING received: project_id=%s annotated_tasks=%s", project_id, len(tasks))

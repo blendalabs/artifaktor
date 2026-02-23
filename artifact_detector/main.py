@@ -1,9 +1,13 @@
 """Artifaktor — Visual artifact detector for AI-generated animation frames."""
 
+import signal
 import sys
 
 
 def main():
+    # Let Ctrl+C kill the app immediately
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
     try:
         from PySide6.QtWidgets import QApplication
     except ImportError:

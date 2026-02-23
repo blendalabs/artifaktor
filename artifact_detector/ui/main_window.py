@@ -292,8 +292,18 @@ class MainWindow(QMainWindow):
     def _on_train_done(self, result: dict) -> None:
         self._btn_train.setEnabled(True)
         self._backend_label.setText("Backend: ✅ online")
-        msg = result.get("message", "Training complete")
-        self._status.showMessage(f"Training done: {msg}")
+
+        status = str(result.get("status", "ok"))
+        sample_count = result.get("sample_count")
+        if status == "ok":
+            if sample_count is not None:
+                self._status.showMessage(f"Training done: {sample_count} samples")
+            else:
+                self._status.showMessage("Training done")
+            return
+
+        msg = result.get("message") or result.get("reason") or status
+        self._status.showMessage(f"Training finished: {msg}")
 
     def _on_train_error(self, msg: str) -> None:
         self._btn_train.setEnabled(True)
